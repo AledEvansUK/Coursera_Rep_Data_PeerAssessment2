@@ -1,0 +1,270 @@
+## Reproducible Research Course – Peer Assessment 2
+
+###### (Part of Coursera - Johns Hopkins University - Data Science Specialization)
+
+
+### USA Severe Weather Events - the impact on US population health and economy
+
+#### Synopsis
+
+###### The analysis uses data from the Storm Database of the NOAA (National Oceanic and Atmospheric Administration of the USA - https://www.ncdc.noaa.gov/stormevents/). The aim of the analysis is to examine data of weather events between 1950 and 2011 from the database and answer two questions: (1) which types of weather events are most harmful with respect to population health?; and (2) which types of weather events have the greatest economic consequences?
+
+
+```{r setup, }
+
+```
+
+#### Settings and Preparation
+
+###### The first step is examine the software, working directory on the local machine that is being used for the analysis.
+
+```{r }
+
+sessionInfo()
+
+getwd()
+
+```
+
+
+#### Loading The Data
+
+###### The NOAA storm data is available at: https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2
+
+###### PDF documentation for the National Weather Service for this database is available at: https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf
+
+
+###### The next step is to download the file and store it in an R dataframe 'stormData'. The dimensions (using 'dim') and the first few rows of the database (using 'head') are called for a first look at the dataframe structure.
+
+```{r }
+# Download database file and store in 'stormData' dataframe
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", destfile = "StormData.csv.bz2")
+stormData <- read.csv(("StormData.csv.bz2"), header=TRUE, stringsAsFactors = FALSE)
+
+dim(stormData)
+
+head(stormData)
+
+```
+
+###### The dataframe contains 902297 rows and 37 columns.
+
+#### Data Processing
+
+###### 1 - Grab the 'year' from BGN_DATE and convert to a numeric value in a seperate column. This will allow the dataframe to be analysed by year over the 1950 - 2001 timeperiod.
+
+###### 2 - Subset dataframe to focus on the data types that are the focus of this analysis - 
+
+###### Year ("year"); weather event type ("EVTYPE"); fatalities ("FATALITIES"); injuries ("INJURIES"); property damage and the associated  exponential ("PROPDMG" and "PROPDMGEXP"); crop damage and associated exponential ("CROPDMG" and "CROPDMGEXP").
+
+###### The exponentials will be used for analysis of economic impact as they can be used to convert the crop and property damage values into a set of values with consistent numbering scale. This will make comparison of the values more straightforward.
+
+
+
+```{r}
+
+# grab year from BGN_DATE
+stormData$year <- as.numeric(format(as.Date(stormData$BGN_DATE, format = "%m/%d/%Y %H:%M:%S"), "%Y"))
+
+# check additional column is added to dataframe
+dim(stormData)
+
+```
+
+
+###### The next step is to subset the dataframe into a new dataframe 'selectedData2' with the columns needed for the analysis.
+
+```{r }
+# Subset the dataframe into a new dataframe 'selectedData2' 
+setcol <- c("EVTYPE","FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP","CROPDMG", "CROPDMGEXP", "year")
+
+selectedData2 <- stormData[setcol]
+
+```
+
+###### Use 'head' and 'dim' to review the structure of the subset data and the first few rows of the subset dataframe 'selectedData2'.
+
+``` {r}
+
+head(selectedData2)
+dim(selectedData2)
+```
+
+###### Plot events recorded for each year.
+
+```{r}
+# Plot events for each year.
+library(ggplot2)
+eventsplot <- ggplot(selectedData2, aes(year)) + geom_histogram(binwidth=1, fill="white", colour="red") + xlab("Year") + ylab("No. Recorded Weather Events") + ggtitle("Weather Events Recorded Per Year") + theme(plot.title = element_text(size = 10))
+
+eventsplot
+```
+
+
+###### The plot indicates that from 1950 to the early 1990's there are relatively few recorded events. This suggests patchy data collection and limitations due to the technology available. The analysis will therefore focus on data from 1993 onwards - when the number of recorded events per year increases significantly.
+
+```{r}
+# subset to only data from 1993 onwards
+selectedData3 <- selectedData2[selectedData2$year >= 1993, ]
+
+# Check dataframe for reduction in rows. No. of columns should stay the same. 
+dim(selectedData3)
+
+```
+
+
+
+###### The subset dataframe has 714738 rows and the 8 specified columns required for this analysis.
+
+##### Update exponential values to numeric equivalent 
+
+###### The next step is to identify the unique variables in PROPDMGEXP
+
+
+``` {r}
+
+unique(selectedData3$PROPDMGEXP)
+
+```
+
+###### The are a number of character variables that need to be converted to the correct exponential numeric equivalent ("H" and "h" is hundred and is replaced by "2" for 2 zeros. Also, "k" for thousand/ 3 zeros; "m" for million and "B" for billion. "+","-" and "?"=" are also replaced by zero. 
+
+``` {r}
+# Replace PROPDMGEXP to the equivalent numeric value.
+library(plyr)
+selectedData3$propExp <- selectedData3$PROPDMGEXP
+selectedData3$propExp <- revalue(selectedData3$propExp, c("K"="3","M"="6","m"="6","B"="9","+"="0","h"="2","H"="2","-"="0","?"="0"))
+selectedData3$propExp[selectedData3$propExp==""] <- "0"
+selectedData3$propExp <- as.numeric(selectedData3$propExp)
+
+```
+
+###### Identify the unique variables in CROPDMGEXP
+
+``` {r}
+
+unique(selectedData3$CROPDMGEXP)
+
+```
+
+
+###### Again, there are a number of character variables that need to be converted to the correct exponential numeric equivalent.
+
+
+```{r}
+# Replace CROPDMGEXP to the equivalent numeric value.
+selectedData3$cropExp <- selectedData3$CROPDMGEXP
+selectedData3$cropExp <- revalue(selectedData3$cropExp, c("K"="3","k"="3", "M"="6", "m"="6", "B"="9", "?"="0"))
+selectedData3$cropExp[selectedData3$cropExp==""] <- "0"
+selectedData3$cropExp <- as.numeric(selectedData3$cropExp)
+
+selectedData3$TOTALPROPDMG <- selectedData3$PROPDMG * (10^selectedData3$propExp)
+
+selectedData3$TOTALCROPDMG <- selectedData3$CROPDMG * (10^selectedData3$cropExp)
+
+# Convert to Billions by dividing by 1000000000
+selectedData3$TOTALPROPDMG <- selectedData3$TOTALPROPDMG / 1000000000
+
+# Convert to Billions by dividing by 1000000000
+selectedData3$TOTALCROPDMG <- selectedData3$TOTALCROPDMG / 1000000000
+
+# Use 'head' and 'dim' to review the structure of dataframe after data processing steps.  
+head(selectedData3)
+dim(selectedData3)
+```
+
+
+#### Results
+
+##### Question 1 - Population Health
+
+###### To answer question - which types of weather events are most harmful with respect to population health? Identify the top 8 weather events with the largest number of injuries; and also identify the top 8 weather events with the largest number of fatalities.  Print out these results.
+
+``` {R }
+# Aggregate 8 weather event types with the largest number of injuries
+injuries <- aggregate(INJURIES ~ EVTYPE, selectedData3, sum)
+injuries <- injuries[order(-injuries$INJURIES), ][1:8, ]
+
+# Print results
+print(injuries)
+
+```
+
+
+```{r }
+# Aggregate 8 weather event types with the largest number of fatalities
+fatalities <- aggregate(FATALITIES ~ EVTYPE, selectedData3, sum)
+fatalities <- fatalities[order(-fatalities$FATALITIES), ][1:8, ]
+
+# Print results
+print(fatalities)
+
+```
+
+###### Using ggplot2 to generate visuals plot of these results in a single figure:
+
+```{r}
+# Load packages for plotting charts
+library(ggplot2)
+library(gridExtra)
+
+# Plot top 8 weather event types with the largest number of injuries
+injuriesPlot <- ggplot(injuries, aes(x=EVTYPE, y=INJURIES)) + geom_bar(stat="identity", fill="white", colour="purple") + xlab("Weather Event Type") + ylab("No. of Injuries") + ggtitle("Top 8 Weather Events - Injuries") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + theme(plot.title = element_text(size = 10))
+
+# Plot 8 weather event types with the largest number of fatalities
+fatalitiesPlot <- ggplot(fatalities, aes(x=EVTYPE, y=FATALITIES)) + geom_bar(stat="identity", fill="white", colour="darkgreen") + xlab("Weather Event Type") + ylab("No. of Fatalitites") + ggtitle("Top 8 Weather Events - Fatalities") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + theme(plot.title = element_text(size = 10))
+
+# Arrange both results in the same plot grid.
+grid.arrange(injuriesPlot, fatalitiesPlot, ncol =2)
+
+```
+
+###### Tornado is the weather event type generating the largest number of injuries across the USA during the 1993 - 2011 time period.
+
+###### Excessive Heat is the weather event type generating the largest number of fatalitites across the USA during the 1993 - 2011 time period. Tornado is a close second for largest number of fatalities.
+
+##### Question 2 - greatest economic consequences. 
+
+###### To answer question - (2) which types of weather events have the greatest economic consequences? Identify the top 8 weather events with the greatest cost values for crop damage; and also identify the top 8 weather events with the greatest cost values for property damage.  Print out these results.
+
+
+```{r}
+# Aggregate 8 weather event types with the greatest property damage
+agrProperty <- aggregate(TOTALPROPDMG~EVTYPE, data = selectedData3,"sum")
+property <- agrProperty[order(-agrProperty$TOTALPROPDMG), ][1:8, ]
+property
+
+```
+
+
+
+```{r}
+# Aggregate 8 weather event types with the greatest crop damage
+agrCrop <- aggregate(TOTALCROPDMG~EVTYPE, data = selectedData3,"sum")
+crop <- agrCrop[order(-agrCrop$TOTALCROPDMG), ][1:8, ]
+crop
+
+```
+
+
+###### Using ggplot2 to generate visuals plot of these results in a single figure:
+
+```{r}
+
+# Plot top 8 weather event types with the  with the greatest property damage
+propPlot <- ggplot(property, aes(x=EVTYPE, y=TOTALPROPDMG)) + geom_bar(stat="identity", fill="white", colour="yellow") + xlab("Weather Event Type") + ylab("Property Damage - $ Billions") + ggtitle("Top 8 Weather Events - Property Damage") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + theme(plot.title = element_text(size = 10))
+
+# Plot top 8 weather event types with the with the greatest crop damage
+cropPlot <- ggplot(crop, aes(x=EVTYPE, y=TOTALCROPDMG)) + geom_bar(stat="identity", fill="white", colour="darkblue") + xlab("Weather Event Type") + ylab("Crop Damage - $ Billions") + ggtitle("Top 8 Weather Events - Crop Damage") + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + theme(plot.title = element_text(size = 10))
+
+# Arrange both results in the same plot grid.
+grid.arrange(propPlot, cropPlot, ncol =2)
+
+```
+
+###### Flood is the weather event type generating the greatest economic consequence for property.
+
+###### Drought is the weather event type generating the greatest economic consequence for crops.
+
+###### These are both across the USA during the 1993 - 2011 time period (when more substantial weather events records are available).
+
